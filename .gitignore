@@ -1,0 +1,11 @@
+#python generated files
+__pycache__/
+*.py[cod]
+
+#Virtual environment
+.venv/
+venv/
+env/
+
+#IDE files
+.vscode/

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String 
+from sqlalchemy import Column, Float, Integer, String
 from database import Base
 
 class User(Base):
@@ -8,3 +8,5 @@ class User(Base):
     name  = Column(String)
     email = Column(String, unique =True)
     password = Column(String)
+    weight = Column(Float)
+    height = Column(Float)
