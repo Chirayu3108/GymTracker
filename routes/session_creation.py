@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from model.exercise import Exercise
 from model.workout import Workout
-from services.session_creation import create_workout, create_exercise, add_exercise_to_workout, start_session, finish_session
+from services.session_creation import create_workout, create_exercise, add_exercise_to_workout, start_session, finish_session, log_exercise
 
 router = APIRouter()
 
@@ -30,4 +30,10 @@ def start_session_route(user_id: int, workout_id: int, db: Session = Depends(get
 @router.post("/finish_session")
 def finish_session_route(session_id: int, db: Session = Depends(get_db)):
     result = finish_session(session_id=session_id, db=db)
+    return result
+
+#posting log for the exercises
+@router.post("/log_exercise")
+def log_exercise_route(session_id: int, exercise_id: int, reps: int, sets: int , db: Session = Depends(get_db)):
+    result = log_exercise(session_id=session_id, exercise_id=exercise_id, reps=reps, sets=sets, db=db)
     return result

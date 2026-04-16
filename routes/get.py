@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
+from model.user import User
 from model.exercise import Exercise
 from model.workout import Workout
 from model.session import Session as SessionModel
