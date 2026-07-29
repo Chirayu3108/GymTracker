@@ -115,3 +115,86 @@ something to look back on later. Newest entries at the bottom.
   `'http://127.0.0.1:8000/health'`) fails at the network layer with a vague
   `DioException [connection error]` — the browser can't tell it's meant to be an absolute network
   address without `http://`.
+
+---
+
+### 2026-07-28 — Phase 0 fully closed: CI pipeline green
+
+**Built:**
+- `[project.optional-dependencies] dev = ["pytest"]` in `backend/pyproject.toml` — a named
+  "extras" group for test-only tooling, installed via `pip install -e ".[dev]"`.
+- `backend/tests/test_health.py` — one trivial real test, so CI has something to actually pass.
+- `.github/workflows/ci.yml` — two parallel jobs (`backend` runs `pytest`, `frontend` runs
+  `flutter analyze`), triggered on push/PR to `main`. Took a couple of iterations to go green.
+
+**Learned:**
+- GitHub Actions: one YAML file per **workflow**, each with one or more **jobs** (independent,
+  parallel, each on its own fresh VM), each job a list of **steps**. `actions/checkout@v4` is
+  needed at the start of every job — a fresh runner has none of your repo's code otherwise.
+  `defaults.run.working-directory` scopes every step in a job to a subfolder (needed here since
+  backend/frontend live in subdirectories, not the repo root).
+- GitHub Actions is free at this scale — unlimited minutes on public repos, 2,000 free
+  minutes/month even on private ones.
+- `[project.optional-dependencies]` in `pyproject.toml` is Python's "extras" mechanism — groups
+  of dependencies (like `pytest`) that aren't needed to run the app, only to test/develop it.
+
+**Gotchas:**
+- `defaults: runs: working-directory: ...` (should be `run`, singular) — GitHub Actions doesn't
+  error on the typo, it just silently doesn't apply the working-directory, so every step ran from
+  the repo root instead of `backend`/`frontend` and couldn't find `pyproject.toml`/`pubspec.yaml`.
+  This is the CI equivalent of the earlier `uvicorn`-from-the-wrong-directory bug — same failure
+  mode, different tool.
+- `on: push: branch: [main]` (should be `branches`, plural) — same silent-typo behavior; the
+  workflow still ran, just without the intended branch filter, meaning it fired on push to any
+  branch rather than just `main`. Worth catching before starting a branch-based workflow.
+
+---
+
+### 2026-07-29 — Project moved out of iCloud; register endpoint debugged and verified working
+
+**Built:**
+- Moved the whole repo from an iCloud-synced path (`~/Desktop/CODING/Gym Tracker/GymTracker`) to
+  `~/Developer/GymTracker` — iCloud's sync daemon was fighting with `uvicorn --reload`'s file
+  watcher and slowing everything down.
+- `POST /api/v1/auth/register` (`app/api/v1/auth.py`, `app/schemas/user.py`,
+  `app/core/security.py`) — first real auth endpoint, hashes the password with `passlib`/`bcrypt`
+  before storing, returns a `UserRead` that never includes the password or hash. Verified live:
+  register succeeds and returns `id`/`email`/`display_name`/`created_at`; a second register with
+  the same email correctly returns `409`.
+
+**Learned:**
+- A **response schema** (`UserRead`) doesn't have to mirror the ORM model — it defines what's
+  safe to hand back to a client. A password hash should never round-trip back to the client, even
+  though it's hashed: it's still a copy an attacker could try to crack offline, and no client ever
+  needs it.
+- `pip install -e ".[dev]"` after changing `pyproject.toml` updates the packages, but a *running*
+  `uvicorn --reload` process already has the old versions loaded in memory — `--reload` only
+  re-imports your own source files on change, not installed dependencies. A dependency version
+  change needs a full process restart, not just a save.
+- Recreating a Python venv after moving a project directory: a venv's `pyvenv.cfg` and script
+  shebangs bake in an **absolute path** at creation time — moving the folder doesn't move the
+  venv with it, it just leaves it silently broken until recreated (`rm -rf .venv && python3 -m
+  venv .venv`).
+- Docker named volumes live inside the Docker VM, not in the project folder — moving the repo
+  directory didn't touch the `pgdata` volume at all, so the existing `users` table and its data
+  survived the move untouched (confirmed via `alembic upgrade head` reporting nothing to do).
+
+**Gotchas that cost real debugging time:**
+- `"passlib[bycrypt]"` in `pyproject.toml` — typo for `bcrypt`. Since the `bycrypt` extra doesn't
+  exist, the real `bcrypt` backend never installed, and passlib silently fell back to a slow
+  pure-Python implementation instead of erroring — this was the root cause of an earlier
+  "password hashing is sometimes really slow" mystery (`backend/diag.py` was written to chase
+  it).
+- Separately, even with the typo fixed: **`passlib` (last released 2020) is incompatible with
+  modern `bcrypt` (4.1+)**. Newer `bcrypt` hard-errors (`ValueError: password cannot be longer
+  than 72 bytes`) during passlib's internal self-test on first use, where older `bcrypt` used to
+  silently truncate. Fixed by pinning `"bcrypt<4.1"` alongside `passlib[bcrypt]` — a known,
+  widely-hit compatibility issue, not something specific to this project.
+- `.env`'s `DATABASE_URL` had the username and database name swapped (`user:pass@host:port/db`
+  slots filled in the wrong order) relative to `docker-compose.yml`'s `POSTGRES_USER`/
+  `POSTGRES_DB` — easy to do by hand-editing a long connection string, worth double-checking
+  against the compose file whenever either changes.
+- `UserRead` originally declared a `password: str` field that didn't exist on the `User` ORM
+  model at all (only `hashed_password` does) — `response_model=UserRead` with
+  `from_attributes=True` would fail validation on every single call to `/register` until this was
+  fixed to drop `password` and add the missing `id: uuid.UUID`.

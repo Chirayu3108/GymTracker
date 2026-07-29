@@ -116,3 +116,22 @@ placeholder that was previously listed under "stretch, not committed." Slotted i
 
 **Why:** User requested this table and unit handling be planned now, ahead of Phase 2
 implementation, so the schema is settled before Phase 1 work touches `users`.
+
+---
+
+### 2026-07-28 — Branching strategy: one branch per roadmap phase
+
+**Decision:** Work happens on a long-lived branch per phase (e.g. `phase-1-mvp-core-loop`),
+merged back to `main` once that phase's feature set actually works end-to-end — not a
+branch-per-task/feature model.
+
+**Why:** Solo dev, so there's no concurrent-work conflict risk a finer-grained branch-per-feature
+model would normally protect against. The roadmap in
+[07-roadmap-phases.md](07-roadmap-phases.md) already chunks work into phase-sized units with a
+clear "done" bar (e.g. Phase 1's "dogfood it yourself for real workouts before moving on"), so
+branch boundaries matching phase boundaries is close to free — no extra process invented on top
+of a plan that already existed.
+
+**Revisit if:** a phase turns out to take long enough that a stale phase-branch starts drifting
+meaningfully from `main`, or collaborators ever join and need smaller, independently reviewable
+units of work.
