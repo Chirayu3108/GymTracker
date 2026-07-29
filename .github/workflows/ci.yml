@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branch: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      runs:
+        working-directory: backend
+    steps:
+     - uses: actions/checkout@v4
+     - uses: actions/setup-python@v5
+       with:
+          python-version: "3.12"
+     - run: pip install -e ".[dev]"
+     - run: pytest
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      runs:
+        working-directory: frontend
+    steps:
+     - uses: actions/checkout@v4
+     - uses: subosito/flutter-action@v2
+       with:
+          channel: stable
+     - run: flutter pub get
+     - run: flutter analyze
