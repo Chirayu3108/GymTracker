@@ -48,6 +48,8 @@ yourself for real workouts before moving on.
 - Per-exercise progress charts (weight/volume over time) via `fl_chart`.
 - Personal records tracking (max weight, estimated 1RM, max volume) with a cached
   `personal_records` table.
+- Body measurement logging (weight/height/body-fat trend over time) via the `body_measurements`
+  table — its own lightweight progress signal, independent of training data.
 
 **Learn:** aggregation queries in SQL/SQLAlchemy, building a custom grid-based widget in Flutter,
 `fl_chart` basics, thinking about what to cache vs. compute on read.

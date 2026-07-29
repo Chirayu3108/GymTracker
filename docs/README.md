@@ -21,6 +21,7 @@ Read in this order the first time. After that, treat each file as a reference yo
 | 9 | [09-learning-path.md](09-learning-path.md) | What to learn, in what order, to execute this plan. |
 | 10 | [10-ui-ux-guidelines.md](10-ui-ux-guidelines.md) | Design principles and the key screens. |
 | 11 | [decisions-log.md](decisions-log.md) | Why we chose what we chose (running log, add to it over time). |
+| 12 | [learning-log.md](learning-log.md) | Session-by-session record of what got built and what was learned (with gotchas), including the messy debugging detail decisions-log.md deliberately leaves out. |
 
 ## Project one-liner
 

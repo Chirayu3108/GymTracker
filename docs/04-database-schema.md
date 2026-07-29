@@ -8,6 +8,15 @@ more painful than starting with them. See [02-architecture.md](02-architecture.m
 Every table has `created_at`. Tables that users can edit/delete also have `updated_at` and
 `deleted_at` (soft delete) — needed for sync/conflict-resolution later, and harmless now.
 
+**Units are always stored canonically, never per-row.** Every weight value is stored in
+kilograms (`numeric`), every height/length value in centimeters — regardless of what unit the
+user entered or wants to see. `users.unit_system` (`metric` | `imperial`) records the user's
+*display* preference only; conversion happens at the presentation layer (API response shaping or
+the Flutter client — not yet decided which, revisit when we build the endpoints), never in the
+database. This avoids mixed-unit data making aggregation/charts/PRs harder than they need to be.
+Applies to `sets.weight`, `routine_exercises.target_weight`, and `body_measurements.weight_kg` /
+`height_cm` alike.
+
 ## Entity relationship diagram
 
 ```mermaid
@@ -15,6 +24,7 @@ erDiagram
     USERS ||--o{ ROUTINES : creates
     USERS ||--o{ EXERCISES : "creates custom"
     USERS ||--o{ WORKOUT_SESSIONS : logs
+    USERS ||--o{ BODY_MEASUREMENTS : logs
     ROUTINES ||--o{ ROUTINE_EXERCISES : contains
     EXERCISES ||--o{ ROUTINE_EXERCISES : "used in"
     EXERCISES ||--o{ SESSION_EXERCISES : "used in"
@@ -25,9 +35,20 @@ erDiagram
     USERS {
         uuid id PK
         string email
-        string password_hash
+        string hashed_password
         string display_name
+        boolean is_active
+        string unit_system
         timestamp created_at
+    }
+    BODY_MEASUREMENTS {
+        uuid id PK
+        uuid user_id FK
+        numeric weight_kg
+        numeric height_cm
+        numeric body_fat_percentage
+        numeric muscle_mass_kg
+        timestamp recorded_at
     }
     EXERCISES {
         uuid id PK
@@ -88,8 +109,10 @@ erDiagram
 |---|---|---|
 | id | uuid, PK | |
 | email | text, unique, not null | |
-| password_hash | text, not null | bcrypt hash, never store plaintext |
+| hashed_password | text, not null | bcrypt hash, never store plaintext |
 | display_name | text, nullable | |
+| is_active | boolean, default true | soft-disable a user without deleting their data |
+| unit_system | enum, default `metric` | `metric` \| `imperial` — display preference only, see unit note above |
 | created_at | timestamptz | |
 | updated_at | timestamptz | |
 
@@ -135,7 +158,7 @@ Join table: which exercises are in a routine, in what order, with what targets.
 | order_index | int, not null | display order within the routine |
 | target_sets | int, nullable | |
 | target_reps | text, nullable | e.g. `"8-12"` — text, not int, to allow ranges |
-| target_weight | numeric, nullable | |
+| target_weight | numeric, nullable | kg, canonical — see unit note above |
 | rest_seconds | int, nullable | |
 
 ### `workout_sessions`
@@ -179,11 +202,27 @@ The atomic unit of logged work.
 | id | uuid, PK | |
 | session_exercise_id | uuid, FK → session_exercises.id, not null | |
 | set_number | int, not null | |
-| weight | numeric, nullable | nullable for bodyweight exercises |
+| weight | numeric, nullable | kg, canonical — see unit note above; nullable for bodyweight exercises |
 | reps | int, not null | |
 | rpe | numeric, nullable | rate of perceived exertion, optional advanced field |
 | is_warmup | boolean, default false | |
 | completed_at | timestamptz, not null | |
+
+### `body_measurements`
+
+Body composition over time — deliberately separate from training data (`sets`/`workout_sessions`);
+a user can log a weigh-in without it being tied to a gym session at all.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid, PK | |
+| user_id | uuid, FK → users.id, not null | |
+| weight_kg | numeric, not null | kg, canonical — see unit note above |
+| height_cm | numeric, nullable | cm, canonical; nullable — unlike weight this rarely changes entry-to-entry, so most logging UIs will only prompt for it occasionally, not every entry |
+| body_fat_percentage | numeric, nullable | |
+| muscle_mass_kg | numeric, nullable | |
+| recorded_at | timestamptz, not null | when the measurement was taken (may differ from `created_at` if logged after the fact) |
+| created_at | timestamptz | |
 
 ### Deriving "what did I lift last time"
 
@@ -197,7 +236,6 @@ client logic.
 
 | Table | Phase | Purpose |
 |---|---|---|
-| `body_metrics` | stretch | date, bodyweight, body-fat %, notes — separate from training data |
 | `personal_records` | Phase 2 | cached PR badges (1RM estimate, max weight, max volume) per user+exercise, recomputed on set completion so PR lookups don't require scanning full history every time |
 | `ai_recommendations` | Phase 4 | logged recommendation text + whether the user accepted it, per user/exercise/session |
 

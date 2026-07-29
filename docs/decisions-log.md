@@ -71,3 +71,48 @@ computed in the backend service layer) before 4b (Claude API-based natural langu
 weight, flag a deload) doesn't need a model at all — it needs the user's own history and a
 handful of rules. Shipping that first delivers real value with zero new infrastructure or cost,
 and validates what recommendations are actually useful before investing in LLM integration.
+
+---
+
+### 2026-07-28 — `users` table field names finalized as built
+
+**Decision:** `password_hash` → `hashed_password`; added `is_active` (boolean, default true) and
+`unit_system` (enum: `metric` | `imperial`, default `metric`).
+
+**Why:** Naming matched what was actually written in `app/models/user.py` while implementing
+Phase 0 — the doc is updated to track reality rather than drift from it. `is_active` is a
+standard soft-disable flag (ban/deactivate a user without deleting their data). `unit_system` is
+needed for the canonical-units decision below.
+
+---
+
+### 2026-07-28 — Canonical metric storage for weight/height; unit is a display preference only
+
+**Decision:** Every weight column is stored in kilograms, every height/length column in
+centimeters — regardless of what the user entered or wants displayed. `users.unit_system` records
+display preference only; conversion to imperial happens at the presentation layer, never in the
+database. Applies to `sets.weight`, `routine_exercises.target_weight`, and the new
+`body_measurements` table.
+
+**Why:** Prompted by adding `body_measurements` (weight/height tracking) and realizing the
+existing schema never actually specified a unit for `sets.weight` / `routine_exercises`. Storing
+mixed units per-row (e.g. a `weight_unit` column on every table) would force every consumer of
+that data — charts, PR calculations, the "last time" query — to handle unit conversion
+defensively. Canonical storage + one display preference is the standard pattern (same approach
+apps like Strong/MyFitnessPal use) and keeps aggregation queries simple.
+
+**Revisit if:** a real need emerges for storing exactly what the user typed (e.g. plates on a
+barbell in lb vs kg genuinely changing what's loadable) — not expected at this app's scope.
+
+---
+
+### 2026-07-28 — `body_measurements` table added, promoted from vague "stretch" to Phase 2
+
+**Decision:** Added a concrete `body_measurements` table (`weight_kg`, `height_cm`,
+`body_fat_percentage`, `muscle_mass_kg`, `recorded_at`), replacing the vague `body_metrics`
+placeholder that was previously listed under "stretch, not committed." Slotted into Phase 2
+(Progress & Motivation) alongside PRs and progress charts, since it's the same kind of signal —
+"am I making progress" — just body composition instead of lift numbers.
+
+**Why:** User requested this table and unit handling be planned now, ahead of Phase 2
+implementation, so the schema is settled before Phase 1 work touches `users`.
