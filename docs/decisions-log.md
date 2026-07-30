@@ -135,3 +135,21 @@ of a plan that already existed.
 **Revisit if:** a phase turns out to take long enough that a stale phase-branch starts drifting
 meaningfully from `main`, or collaborators ever join and need smaller, independently reviewable
 units of work.
+
+---
+
+### 2026-07-29 — Logout is client-side only; no server-side token revocation
+
+**Decision:** `POST /auth/logout` as a backend route is dropped. Logging out means the Flutter
+app deletes its locally stored access/refresh tokens — nothing server-side happens.
+
+**Why:** JWTs are stateless by design — the server doesn't track which tokens exist, so
+"invalidating" one for real requires extra infrastructure (a revoked/issued-token table checked
+on every `/auth/refresh` call). That's real complexity — a table, a cleanup story for expired
+entries, a check on the hot path of every refresh — for a capability the MVP doesn't need: no
+"log out all devices," no forced revocation on a compromised account. Deleting the local tokens
+is sufficient for a single-device, solo-user MVP.
+
+**Revisit if:** multi-device session management, forced logout (e.g. admin action or detected
+compromise), or "log out everywhere" ever becomes an actual requirement — at that point a
+refresh-token table is the standard fix.

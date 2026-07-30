@@ -22,7 +22,9 @@ living API reference; this doc is the design-time plan.
 | POST | `/api/v1/auth/register` | Create account (email + password) |
 | POST | `/api/v1/auth/login` | Returns access + refresh token |
 | POST | `/api/v1/auth/refresh` | Exchange refresh token for new access token |
-| POST | `/api/v1/auth/logout` | Invalidate refresh token |
+
+Logout has no backend route — see [decisions-log.md](decisions-log.md) (2026-07-29). It's purely
+client-side: the app deletes its stored tokens.
 
 ## Users
 

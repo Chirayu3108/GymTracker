@@ -250,3 +250,47 @@ something to look back on later. Newest entries at the bottom.
   `ModuleNotFoundError: No module named 'sqlalchemy'` despite `(.venv)` showing active in the
   shell prompt — a reminder that an active-looking prompt doesn't guarantee it's *the* venv you
   think it is.
+
+---
+
+### 2026-07-29 — `get_current_user` dependency + first protected route (`GET /users/me`)
+
+**Built:**
+- `app/api/deps.py` — new file, the convention for reusable FastAPI dependencies (as opposed to
+  `core/security.py`, which is framework-agnostic logic with no `Depends`/FastAPI concepts in it).
+  Holds `get_current_user`, built on `fastapi.security.HTTPBearer` to extract the token from the
+  `Authorization` header, `decode_token` (from `security.py`) to verify/decode it, and a DB lookup
+  by the token's `sub` claim — `401` on any failure (bad/expired token, or a valid token for a
+  since-deleted user).
+- `app/api/v1/user.py` — first protected route, `GET /users/me`, using
+  `current_user: User = Depends(get_current_user)`. Registered in `main.py` alongside the auth
+  router.
+- Tested all three cases live via Swagger's **Authorize** button (`/docs`): valid token → own
+  profile back, no header → `401`, garbage token → `401`.
+
+**Learned:**
+- `HTTPBearer()` used with `Depends()` is a FastAPI **security scheme** — beyond just extracting
+  the header, it's what makes the padlock/"Authorize" button appear in Swagger UI at all, letting
+  you set the token once and have it auto-attached to every subsequent request from that page.
+- `HTTPBearer` hands you an `HTTPAuthorizationCredentials` object, not a raw string — the token
+  itself is `credentials.credentials`.
+- Docker containers don't survive a reboot/Docker-Desktop-restart running — `docker compose up -d`
+  (or just starting Docker Desktop then the container) is needed after any interruption, not just
+  once at project setup. A `Connect call failed` / `OSError` on the DB connection almost always
+  means "Postgres isn't actually running," not an app bug — worth checking `docker ps` first
+  before assuming the code broke.
+- `psql` ships inside the official `postgres` Docker image already —
+  `docker exec -it gymtracker-db psql -U <user> -d <db>` gets a SQL prompt with zero extra
+  install, useful for a quick manual check of what's actually in a table.
+
+**Gotchas that cost real debugging time:**
+- `UserCreate.display_name` was made required, but `register()`'s `User(...)` construction never
+  actually passed `payload.display_name` through — every registered user silently got
+  `display_name = NULL` regardless of what the client sent, despite the field being marked
+  required in the schema. A reminder that adding a field to a request schema doesn't automatically
+  wire it anywhere — it still has to be threaded through to wherever the object actually gets
+  built.
+- `user.py`'s router was written and correct, but never `include_router`'d in `main.py` — every
+  call to `/api/v1/users/me` `404`'d, not because of anything wrong in the route itself, just
+  because it was never reachable in the first place. Same failure class as forgetting to export
+  something: the code is right, it's just not plugged in.
