@@ -198,3 +198,55 @@ something to look back on later. Newest entries at the bottom.
   model at all (only `hashed_password` does) — `response_model=UserRead` with
   `from_attributes=True` would fail validation on every single call to `/register` until this was
   fixed to drop `password` and add the missing `id: uuid.UUID`.
+
+---
+
+### 2026-07-29 — `POST /api/v1/auth/login` written and debugged solo, tested working
+
+**Built:**
+- `create_access_token`, `create_refresh_token`, `decode_token` in `app/core/security.py`, using
+  `python-jose[cryptography]`'s `jwt.encode`/`jwt.decode`. Access and refresh tokens are the same
+  shape (`sub` = user id as a string, `exp` = UTC expiry) — they only differ in lifetime
+  (`access_token_expire` minutes vs. a days-based refresh expiry), matching the access/refresh
+  split already planned in [05-api-design.md](05-api-design.md).
+- JWT settings (`secret_key`, `algorithm`, `access_token_expire`, `create_refresh_token`) added to
+  `Settings` in `app/core/config.py`, sourced from `.env` the same way `database_url` already was.
+  `SECRET_KEY` generated with `secrets.token_hex(32)`.
+- `app/schemas/auth.py` — new file, `UserLogin` (email + password) and `Token` (access + refresh +
+  `token_type`) request/response schemas.
+- `POST /api/v1/auth/login` in `app/api/v1/auth.py` — looks up the user by email, verifies the
+  password, returns a `Token` on success or `401` on any failure. Tested live: correct credentials
+  return both tokens, wrong password returns `401`.
+
+**Learned:**
+- Writing the login logic first, *then* getting it reviewed, surfaced three separate bugs at once
+  — see Gotchas. All three were the kind that don't announce themselves: no crash, no traceback,
+  just wrong behavior (or in one case, a security hole) that only shows up if you actually read
+  the logic or test both the success and failure path.
+- A JWT's `sub` claim should be something stable and unique — the user's *id*, not their email
+  (emails can change; ids don't) — and it has to be a `str`, since JWT claims are JSON and a
+  `uuid.UUID` object isn't directly serializable.
+- `--reload` restarting on file save doesn't help if the *venv itself* is wrong — a second,
+  near-empty venv (missing `sqlalchemy` etc.) got created at some point outside the one set up
+  earlier at the project root, which is a good reminder to always check `which python` when an
+  import error appears for a package that's definitely in `pyproject.toml`.
+
+**Gotchas that cost real debugging time:**
+- `verify_password(payload.password, user.hashed_password)` was called but its return value was
+  never captured — the very next line then checked `if verify_password == False`, which compares
+  the *function object itself* to `False` (never true) instead of calling it. Net effect: **login
+  accepted any password for a valid email**, silently. Fixed to
+  `if not verify_password(payload.password, user.hashed_password): raise HTTPException(401, ...)`.
+  Worth remembering as a class of bug: forgetting `()` when checking a function's result reads
+  like working code (no syntax error, no crash) but is not calling the function at all.
+- `create_access_token(UserLogin.email)` passed the *schema class's* field descriptor
+  (`UserLogin.email`), not the actual request data (`payload.email`) or — better, per the point
+  above — `str(user.id)`.
+- The route returned a bare token string while declaring `response_model=Token` (which expects
+  `access_token`/`refresh_token`/`token_type`) — fixed by constructing an actual `Token(...)`
+  from both `create_access_token(...)` and `create_refresh_token(...)`.
+- A second, unrelated venv appeared somewhere outside `~/Developer/GymTracker/.venv` with only
+  `python-jose` installed into it (not the full project), causing
+  `ModuleNotFoundError: No module named 'sqlalchemy'` despite `(.venv)` showing active in the
+  shell prompt — a reminder that an active-looking prompt doesn't guarantee it's *the* venv you
+  think it is.

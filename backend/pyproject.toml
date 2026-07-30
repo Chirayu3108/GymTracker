@@ -14,7 +14,8 @@ dependencies = [
   "alembic",
   "passlib[bcrypt]",
   "bcrypt<4.1",
-  "pydantic[email]"
+  "pydantic[email]",
+  "python-jose[cryptography]"
 ]
 
 [project.optional-dependencies]
