@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-from jose import JWTError, jwt
+from jose import JWTError
 
 from app.core.security import decode_token
 from app.db.sessions import get_db
@@ -26,6 +26,8 @@ async def get_current_user(
 
     user_id = payload.get("sub")
     if user_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Token")
+    if payload.get("type") != "access":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Token")
 
     user = await db.scalar(select(User).where(User.id == uuid.UUID(user_id)))
