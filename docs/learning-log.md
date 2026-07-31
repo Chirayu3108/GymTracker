@@ -250,3 +250,88 @@ something to look back on later. Newest entries at the bottom.
   `ModuleNotFoundError: No module named 'sqlalchemy'` despite `(.venv)` showing active in the
   shell prompt — a reminder that an active-looking prompt doesn't guarantee it's *the* venv you
   think it is.
+
+---
+
+### 2026-07-29 — `get_current_user` dependency + first protected route (`GET /users/me`)
+
+**Built:**
+- `app/api/deps.py` — new file, the convention for reusable FastAPI dependencies (as opposed to
+  `core/security.py`, which is framework-agnostic logic with no `Depends`/FastAPI concepts in it).
+  Holds `get_current_user`, built on `fastapi.security.HTTPBearer` to extract the token from the
+  `Authorization` header, `decode_token` (from `security.py`) to verify/decode it, and a DB lookup
+  by the token's `sub` claim — `401` on any failure (bad/expired token, or a valid token for a
+  since-deleted user).
+- `app/api/v1/user.py` — first protected route, `GET /users/me`, using
+  `current_user: User = Depends(get_current_user)`. Registered in `main.py` alongside the auth
+  router.
+- Tested all three cases live via Swagger's **Authorize** button (`/docs`): valid token → own
+  profile back, no header → `401`, garbage token → `401`.
+
+**Learned:**
+- `HTTPBearer()` used with `Depends()` is a FastAPI **security scheme** — beyond just extracting
+  the header, it's what makes the padlock/"Authorize" button appear in Swagger UI at all, letting
+  you set the token once and have it auto-attached to every subsequent request from that page.
+- `HTTPBearer` hands you an `HTTPAuthorizationCredentials` object, not a raw string — the token
+  itself is `credentials.credentials`.
+- Docker containers don't survive a reboot/Docker-Desktop-restart running — `docker compose up -d`
+  (or just starting Docker Desktop then the container) is needed after any interruption, not just
+  once at project setup. A `Connect call failed` / `OSError` on the DB connection almost always
+  means "Postgres isn't actually running," not an app bug — worth checking `docker ps` first
+  before assuming the code broke.
+- `psql` ships inside the official `postgres` Docker image already —
+  `docker exec -it gymtracker-db psql -U <user> -d <db>` gets a SQL prompt with zero extra
+  install, useful for a quick manual check of what's actually in a table.
+
+**Gotchas that cost real debugging time:**
+- `UserCreate.display_name` was made required, but `register()`'s `User(...)` construction never
+  actually passed `payload.display_name` through — every registered user silently got
+  `display_name = NULL` regardless of what the client sent, despite the field being marked
+  required in the schema. A reminder that adding a field to a request schema doesn't automatically
+  wire it anywhere — it still has to be threaded through to wherever the object actually gets
+  built.
+- `user.py`'s router was written and correct, but never `include_router`'d in `main.py` — every
+  call to `/api/v1/users/me` `404`'d, not because of anything wrong in the route itself, just
+  because it was never reachable in the first place. Same failure class as forgetting to export
+  something: the code is right, it's just not plugged in.
+
+---
+
+### 2026-07-29 — `POST /auth/refresh` and access/refresh token-type enforcement — backend auth closed out
+
+**Built:**
+- `RefreshRequest` schema (`app/schemas/auth.py`) and `POST /auth/refresh` (`app/api/v1/auth.py`)
+  — decodes the client's refresh token, looks up the user by the token's `sub`, returns a fresh
+  access token. Non-rotating: the same refresh token is handed back rather than issuing a new one,
+  simplest option that's fine for a single-device MVP.
+- A `"type"` claim (`"access"` or `"refresh"`) added to every JWT's payload in
+  `create_access_token`/`create_refresh_token` (`app/core/security.py`), enforced on both ends:
+  `/auth/refresh` now rejects a token whose `type` isn't `"refresh"`, and `get_current_user`
+  rejects one whose `type` isn't `"access"`.
+- This closes out backend auth entirely for Phase 1: register, login, refresh, and the
+  `get_current_user` dependency protecting routes going forward. Frontend auth (token storage,
+  `dio` interceptor) and browsing/routines/sessions are what's left in Phase 1.
+
+**Learned:**
+- Without something inside the token itself distinguishing *why* it was issued, two tokens with
+  the same signing key and claims shape are fully interchangeable to any code that just calls
+  `decode`/verifies the signature — the server has to check semantic meaning explicitly (a `type`
+  claim, checked in each route/dependency), it doesn't come for free just because the tokens have
+  different expiry lengths.
+- `/auth/refresh` deliberately does **not** use the `get_current_user` dependency, even though the
+  decode-and-look-up shape is nearly identical — by definition, a client hitting `/refresh` may
+  already have an *expired* access token, so the route can't require one. The refresh token itself
+  is the only credential available at that point.
+
+**Gotchas:**
+- Made the exact same mistake as the earlier `create_access_token(UserLogin.email)` bug a second
+  time — first draft of `/refresh` had `decode_token(RefreshRequest.refresh_token)`, the schema
+  *class*'s field descriptor again instead of `payload.refresh_token`, the actual request data.
+  Worth internalizing as a pattern to watch for deliberately: `SomeSchema.field` vs
+  `some_instance.field` look almost identical to read but mean completely different things, and
+  the class form doesn't error loudly — it just silently isn't the data you meant.
+- First draft of `/refresh` also skipped the DB lookup entirely — decoded the token and minted new
+  tokens straight off the `sub` claim without ever checking a user with that id still exists,
+  missing the same "token valid but user since deleted" edge case `get_current_user` already
+  guards against. Consistency between the two token-consuming code paths isn't automatic just
+  because the logic looks similar — each one needs the same checks explicitly.

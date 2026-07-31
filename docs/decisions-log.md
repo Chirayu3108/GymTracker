@@ -135,3 +135,42 @@ of a plan that already existed.
 **Revisit if:** a phase turns out to take long enough that a stale phase-branch starts drifting
 meaningfully from `main`, or collaborators ever join and need smaller, independently reviewable
 units of work.
+
+---
+
+### 2026-07-29 — Logout is client-side only; no server-side token revocation
+
+**Decision:** `POST /auth/logout` as a backend route is dropped. Logging out means the Flutter
+app deletes its locally stored access/refresh tokens — nothing server-side happens.
+
+**Why:** JWTs are stateless by design — the server doesn't track which tokens exist, so
+"invalidating" one for real requires extra infrastructure (a revoked/issued-token table checked
+on every `/auth/refresh` call). That's real complexity — a table, a cleanup story for expired
+entries, a check on the hot path of every refresh — for a capability the MVP doesn't need: no
+"log out all devices," no forced revocation on a compromised account. Deleting the local tokens
+is sufficient for a single-device, solo-user MVP.
+
+**Revisit if:** multi-device session management, forced logout (e.g. admin action or detected
+compromise), or "log out everywhere" ever becomes an actual requirement — at that point a
+refresh-token table is the standard fix.
+
+---
+
+### 2026-07-29 — Refresh tokens are non-rotating; JWTs carry a `type` claim
+
+**Decision:** `POST /auth/refresh` returns a new access token but hands back the *same* refresh
+token the client sent — it doesn't rotate/reissue one. Separately, every JWT now carries a
+`"type"` claim (`"access"` or `"refresh"`), checked explicitly wherever a token is consumed
+(`/auth/refresh` requires `"refresh"`, `get_current_user` requires `"access"`).
+
+**Why:** Rotating refresh tokens (issuing a new one on every use, invalidating the old) is the
+more defensible pattern against token theft, but it requires exactly the kind of server-side
+tracking — a table of currently-valid refresh tokens — that the logout decision above just ruled
+out of scope for the MVP. Without that infrastructure, rotation adds complexity without adding
+real protection (there's nothing to actually invalidate the *old* token with). The `type` claim,
+by contrast, is close to free (one extra field, checked in two places) and closes a real gap:
+without it, access and refresh tokens were structurally identical and fully interchangeable at
+either endpoint.
+
+**Revisit if:** the no-server-side-tracking constraint changes (see the logout decision above) —
+rotation becomes worth adding at the same time a revocation table gets built, not before.
