@@ -335,3 +335,55 @@ something to look back on later. Newest entries at the bottom.
   missing the same "token valid but user since deleted" edge case `get_current_user` already
   guards against. Consistency between the two token-consuming code paths isn't automatic just
   because the logic looks similar — each one needs the same checks explicitly.
+
+---
+
+### 2026-07-31 — Frontend auth begins: Dart from scratch through a working register screen + routing
+
+**Built:**
+- A from-scratch Dart primer (variables/types, null safety `?`/`!`/`??`, functions and named
+  parameters, classes with `required this.x` constructor shorthand, `Future`/`async`/`await`),
+  practiced in DartPad before touching Flutter — first real Dart written outside the Phase-0
+  `HealthCheckScreen` scaffold.
+- `lib/features/auth/register_screen.dart` — a full `StatefulWidget` form: three
+  `TextEditingController`s, a `Form`/`GlobalKey<FormState>` with per-field `validator`s (email
+  shape, password length, non-empty name), a loading flag disabling the submit button mid-request,
+  and `try`/`on DioException`/`finally` error handling that surfaces either the backend's `detail`
+  message or a generic fallback via `ScaffoldMessenger`'s `SnackBar`.
+- `lib/features/auth/login_screen.dart` — placeholder for now, real implementation is next.
+- `go_router` added and wired into `main.dart` (`MaterialApp.router` + a `GoRouter` with
+  `/register`/`/login` routes), replacing the fixed single-`home:` setup from Phase 0. Register
+  screen navigates to `/login` on success and via an explicit "Already have an account?" link.
+
+**Learned:**
+- `StatefulWidget` is actually two classes — the widget itself (thrown away/recreated constantly,
+  which is fine) and a `State` object (what actually persists across rebuilds). `setState(() {
+  ... })` isn't just "change the variable," it's "change it *and* tell Flutter to re-run
+  `build()`" — mutating state outside `setState` changes the value but never updates the screen.
+- `TextEditingController`s must be `dispose()`d (the lifecycle counterpart to `initState`) or they
+  leak.
+- `dio` throws `DioException` on any failed request. `e.response` is non-null when the server
+  actually replied with an error status (so `e.response?.data['detail']` reads the backend's
+  message); `null` means the request never got a response at all (network/connection failure) —
+  the same distinction matters for telling "bad input" apart from "backend's not running."
+- A `State`'s `mounted` flag has to be checked before any `setState` (or anything touching
+  `context`) that happens *after* an `await` — the widget may have been navigated away from and
+  disposed while the request was in flight, and touching a disposed widget throws.
+- `go_router`'s `context.go(...)` **replaces** the current route rather than stacking on top of
+  it — which matters for UI sequencing, see Gotchas below.
+
+**Gotchas:**
+- The display name field's validator originally checked `value == null` — but an empty, untouched
+  `TextFormField` has `value == ""`, not `null`. Passed validation with the field left blank until
+  changed to `value == null || value.isEmpty`.
+- Register screen initially fired a success `SnackBar` and `context.go("/login")` back to back on
+  success. Since `context.go` tears down the current route (and its `Scaffold`, which is what's
+  actually rendering the SnackBar) immediately, the message never had time to actually be seen —
+  fixed by dropping the SnackBar from the success path entirely (the `/login` navigation itself is
+  enough feedback) and keeping it only in the `catch` branch, where nothing navigates away
+  underneath it.
+- Spent time debugging "submit does nothing" that turned out to be the backend/Docker not running
+  — same class of issue as the backend session's `OSError: Connect call failed`, just harder to
+  see from the frontend since an uncaught `DioException` at that point printed only to the debug
+  console, not the screen. This was the direct motivation for adding proper error handling instead
+  of leaving `dio.post` uncaught.
