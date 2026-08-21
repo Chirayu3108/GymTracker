@@ -12,11 +12,10 @@ void main() {
 final _router = GoRouter(
   initialLocation: "/register",
   routes: [
-    GoRoute(
-      path: "/register",
-      builder: (context, state) => const RegisterScreen(),
-    ),
+    GoRoute(path: "/register",builder: (context, state) => const RegisterScreen(),),
     GoRoute(path: "/login", builder: (context, state) => const LoginScreen()),
+    GoRoute(path: "/home", builder:(context, state) => const HealthCheckScreen(),)
+
   ],
 );
 
@@ -43,7 +42,7 @@ class HealthCheckScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('GymTracker')),
       body: Center(
-        child: FutureBuilder<String>(
+        child: FutureBuilder<String>( 
           future: fetchHealth(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {

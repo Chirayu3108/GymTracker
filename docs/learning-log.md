@@ -387,3 +387,21 @@ something to look back on later. Newest entries at the bottom.
   see from the frontend since an uncaught `DioException` at that point printed only to the debug
   console, not the screen. This was the direct motivation for adding proper error handling instead
   of leaving `dio.post` uncaught.
+
+---
+
+### 2026-08-05 — Login screen finished: tokens persisted, one routing bug fixed
+
+**Built:** `login_screen.dart` — same form/validation/loading/error shape as register, posts to
+`/auth/login`, reads `access_token`/`refresh_token` off the response, writes both to
+`flutter_secure_storage`. Tested working end to end.
+
+**Gotcha:** first draft navigated with `context.go("/health")` but the route registered in
+`main.dart` was `"/home"` — silent string mismatch, `go_router` just fails to find a match. Fixed
+by matching the literal path string on both ends.
+
+**Paused, not forgotten:** started centralizing token storage into `lib/core/token_storage.dart`
+(per `06-project-structure.md`'s plan for `core/`) but stopped before it had any methods — it's an
+empty, unused stub sitting in the working tree, deliberately left out of the commit. Still needed
+before the `dio` interceptor (auto-attach access token, refresh-on-401) and route guarding can be
+built — resume there next time frontend work picks back up.
